@@ -1,0 +1,1599 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <!-- Viewport: sin zoom accidental y ocupando toda la pantalla (muesca incluida) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0b0f" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="description" content="Seguimiento personal de películas y series" />
+
+  <!-- PWA / iPhone -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Mis Series" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+
+  <title>Mis Series</title>
+
+  <!-- Tailwind por CDN (sin compilación) -->
+  <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            base: '#0b0b0f',
+            card: '#16161c',
+            card2: '#1f1f27',
+            line: '#2a2a34',
+            accent: { DEFAULT: '#f5a524', dark: '#d98a0b' }
+          },
+          fontFamily: {
+            sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', 'Inter', 'Roboto', 'system-ui', 'sans-serif']
+          },
+          boxShadow: {
+            soft: '0 10px 30px -12px rgba(0,0,0,.7)',
+            glow: '0 8px 24px -8px rgba(245,165,36,.45)'
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    :root { color-scheme: dark; }
+    html, body {
+      background: #0b0b0f;
+      color: #f1f1f4;
+      margin: 0;
+      min-height: 100%;
+      overscroll-behavior-y: none;
+      -webkit-text-size-adjust: 100%;
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, Roboto, system-ui, sans-serif;
+    }
+    /* Sensación nativa: sin selección de texto en controles y sin retardo táctil */
+    button, a, nav, header, .no-select {
+      -webkit-user-select: none;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; }
+    /* 16px evita que iOS haga zoom al enfocar un campo */
+    input, textarea { font-size: 16px !important; -webkit-user-select: text; user-select: text; }
+
+    /* Zonas seguras (muesca y barra inferior) */
+    .pt-safe { padding-top: env(safe-area-inset-top); }
+    .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+    .px-safe { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+    .main-pad { padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
+    .page-end { padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+    .top-safe { top: calc(env(safe-area-inset-top) + 8px); }
+    .toast-pos { bottom: calc(80px + env(safe-area-inset-bottom)); }
+
+    /* Botón icono táctil (44px mínimo) */
+    .icon-btn {
+      width: 44px; height: 44px; min-width: 44px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border-radius: 9999px; transition: background-color .15s, transform .15s;
+    }
+    .icon-btn:active { background: rgba(255,255,255,.08); transform: scale(.94); }
+    .press { transition: transform .15s ease, opacity .15s ease; }
+    .press:active { transform: scale(.97); opacity: .85; }
+
+    /* Transiciones */
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+    @keyframes popIn { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+    @keyframes shake { 0%,100% { transform: none; } 20%,60% { transform: translateX(-10px); } 40%,80% { transform: translateX(10px); } }
+    @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+    .screen-enter { animation: fadeUp .25s ease-out; }
+    .overlay-enter { animation: slideIn .28s cubic-bezier(.2,.8,.2,1); }
+    .pop-in { animation: popIn .22s ease-out; }
+    .shake { animation: shake .4s ease; }
+
+    /* Esqueletos de carga */
+    .skeleton {
+      background: linear-gradient(90deg, #1b1b22 25%, #272731 37%, #1b1b22 63%);
+      background-size: 400% 100%;
+      animation: shimmer 1.4s ease infinite;
+    }
+
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { scrollbar-width: none; }
+    .snap-x-row { scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; }
+    .snap-x-row > * { scroll-snap-align: start; }
+
+    /* Pantalla de arranque (antes de que cargue Preact) */
+    #boot { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #8a8a96; font-size: 14px; }
+    #boot .dot { width: 10px; height: 10px; border-radius: 50%; background: #f5a524; animation: fadeUp .8s ease-in-out infinite alternate; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="boot"><div class="dot"></div><span id="boot-msg">Cargando Mis Series…</span></div>
+  </div>
+
+  <!-- Si los módulos del CDN no cargan (p. ej. primera vez sin conexión), avisamos -->
+  <script>
+    setTimeout(function () {
+      if (!window.__misSeriesStarted) {
+        var m = document.getElementById('boot-msg');
+        if (m) m.innerHTML = 'No se pudo cargar la app.<br>Comprueba tu conexión y <a href="" style="color:#f5a524">vuelve a intentarlo</a>.';
+      }
+    }, 10000);
+
+    // Registro del service worker: solo si el navegador lo soporta y no es file://
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js').catch(function () {});
+      });
+    }
+  </script>
+
+  <script type="module">
+    import { h, render } from 'https://esm.sh/preact@10.24.3';
+    import { useState, useEffect, useRef, useLayoutEffect } from 'https://esm.sh/preact@10.24.3/hooks';
+    import htm from 'https://esm.sh/htm@3.1.1';
+    import * as Lucide from 'https://esm.sh/lucide@0.460.0';
+
+    const html = htm.bind(h);
+    window.__misSeriesStarted = true;
+
+    /* =====================================================================
+       UTILIDADES
+       ===================================================================== */
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const norm = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const pad2 = (n) => String(n).padStart(2, '0');
+    const toDateStr = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    const todayStr = () => toDateStr(new Date());
+    const addDaysStr = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return toDateStr(d); };
+    // Las fechas de TMDB son "AAAA-MM-DD": las interpretamos en hora local
+    const parseDate = (s) => { if (!s) return null; const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+    const daysUntil = (s) => { const d = parseDate(s); return d ? Math.round((d - parseDate(todayStr())) / 864e5) : null; };
+    const fmtDate = (s, opts = { day: 'numeric', month: 'long', year: 'numeric' }) => {
+      const d = parseDate(s); return d ? d.toLocaleDateString('es-ES', opts) : '';
+    };
+    const yearOf = (s) => (s ? String(s).slice(0, 4) : '');
+    const fmtRuntime = (m) => { if (!m) return ''; const hh = Math.floor(m / 60), mm = m % 60; return hh ? `${hh} h${mm ? ` ${mm} min` : ''}` : `${mm} min`; };
+    const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+    // Cuenta atrás amable: "hoy", "mañana", "en 3 días"
+    function countdown(s) {
+      const n = daysUntil(s);
+      if (n == null) return '';
+      if (n < 0) return 'ya emitido';
+      if (n === 0) return 'hoy';
+      if (n === 1) return 'mañana';
+      if (n <= 30) return `en ${n} días`;
+      return fmtDate(s, { day: 'numeric', month: 'short' });
+    }
+    function timeAgo(ts) {
+      const diff = (Date.now() - ts) / 1000;
+      if (diff < 60) return 'hace un momento';
+      if (diff < 3600) return `hace ${Math.floor(diff / 60)} min`;
+      if (diff < 86400) return `hace ${plural(Math.floor(diff / 3600), 'hora', 'horas')}`;
+      return `hace ${plural(Math.floor(diff / 86400), 'día', 'días')}`;
+    }
+    const TV_STATUS = {
+      'Returning Series': { label: 'En emisión', cls: 'bg-emerald-500/15 text-emerald-300' },
+      'In Production': { label: 'En producción', cls: 'bg-sky-500/15 text-sky-300' },
+      'Planned': { label: 'Planificada', cls: 'bg-sky-500/15 text-sky-300' },
+      'Pilot': { label: 'Piloto', cls: 'bg-sky-500/15 text-sky-300' },
+      'Ended': { label: 'Finalizada', cls: 'bg-zinc-500/20 text-zinc-300' },
+      'Canceled': { label: 'Cancelada', cls: 'bg-rose-500/15 text-rose-300' }
+    };
+
+    /* Avisos discretos (toasts) */
+    let lastToast = { msg: '', t: 0 };
+    function toast(msg) {
+      const now = Date.now();
+      if (msg === lastToast.msg && now - lastToast.t < 4000) return; // evita repetir el mismo aviso
+      lastToast = { msg, t: now };
+      window.dispatchEvent(new CustomEvent('ms-toast', { detail: msg }));
+    }
+
+    /* =====================================================================
+       STORAGE (localStorage con try/catch y respaldo en memoria)
+       ===================================================================== */
+    // Prefijo: en GitHub Pages todos tus repos comparten origen (usuario.github.io)
+    const PREFIX = 'misseries:';
+    const memory = {};
+    let storageWarned = false;
+
+    function load(key, fallback) {
+      try {
+        const raw = localStorage.getItem(PREFIX + key);
+        if (raw != null) return JSON.parse(raw);
+      } catch (e) { /* almacenamiento no disponible o JSON corrupto */ }
+      return key in memory ? memory[key] : fallback;
+    }
+    function save(key, value) {
+      memory[key] = value; // siempre queda en memoria
+      try {
+        localStorage.setItem(PREFIX + key, JSON.stringify(value));
+        return true;
+      } catch (e) {
+        if (!storageWarned) { storageWarned = true; toast('No se pudo guardar en el dispositivo. Los cambios se perderán al cerrar.'); }
+        return false;
+      }
+    }
+    function removeKey(key) {
+      delete memory[key];
+      try { localStorage.removeItem(PREFIX + key); } catch (e) {}
+    }
+
+    const DEFAULT_SETTINGS = { apiKey: '', pinHash: '', lastCheck: 0, demo: false };
+    const PERSISTED = ['titles', 'watchedEpisodes', 'notifications', 'settings'];
+
+    // Almacén global mínimo con suscripción
+    const store = {
+      state: {
+        titles: load('titles', {}),
+        watchedEpisodes: load('watchedEpisodes', {}),
+        notifications: load('notifications', []),
+        settings: { ...DEFAULT_SETTINGS, ...load('settings', {}) },
+        checking: false // no se guarda
+      },
+      listeners: new Set(),
+      set(key, valueOrFn) {
+        const prev = this.state[key];
+        const next = typeof valueOrFn === 'function' ? valueOrFn(prev) : valueOrFn;
+        this.state = { ...this.state, [key]: next };
+        if (PERSISTED.includes(key)) save(key, next);
+        this.listeners.forEach((l) => l());
+      }
+    };
+    function useStore() {
+      const [, force] = useState(0);
+      useEffect(() => {
+        const l = () => force((n) => n + 1);
+        store.listeners.add(l);
+        return () => store.listeners.delete(l);
+      }, []);
+      return store.state;
+    }
+
+    const keyOf = (type, id) => `${type}_${id}`;
+    const isEmptyEntry = (e) => !e.status && !e.followed && !e.rating && !(e.notes || '').trim();
+
+    // Crea o actualiza un título guardado. touch=false para refrescos automáticos (no cambia el orden)
+    function upsertTitle(type, id, patch, { touch = true } = {}) {
+      store.set('titles', (all) => {
+        const k = keyOf(type, id);
+        const cur = all[k] || {
+          id: Number(id), type, title: '', poster: null, backdrop: null, status: null, rating: 0,
+          notes: '', followed: false, knownSeasons: 0, nextEpisode: null, updatedAt: Date.now()
+        };
+        const next = { ...cur, ...patch };
+        if (touch) next.updatedAt = Date.now();
+        const copy = { ...all };
+        if (isEmptyEntry(next)) delete copy[k]; else copy[k] = next;
+        return copy;
+      });
+    }
+
+    function addNotification(titleId, kind, message) {
+      store.set('notifications', (list) => [
+        { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), titleId, kind, message, date: new Date().toISOString(), read: false },
+        ...list
+      ].slice(0, 100));
+    }
+
+    // Marca o desmarca episodios: watchedEpisodes[tvId][season] = [números]
+    function setEpisodes(tvId, season, eps, on) {
+      store.set('watchedEpisodes', (all) => {
+        const tv = { ...(all[tvId] || {}) };
+        const set = new Set(tv[season] || []);
+        eps.forEach((e) => (on ? set.add(e) : set.delete(e)));
+        const arr = [...set].sort((a, b) => a - b);
+        if (arr.length) tv[season] = arr; else delete tv[season];
+        const copy = { ...all };
+        if (Object.keys(tv).length) copy[tvId] = tv; else delete copy[tvId];
+        return copy;
+      });
+    }
+
+    // Progreso de una serie: "T2 · 5/10 episodios"
+    function seriesProgress(t, w = {}) {
+      const seasons = t.seasonsInfo || [];
+      const totalEps = seasons.reduce((a, s) => a + (s.eps || 0), 0);
+      const watchedTotal = Object.values(w).reduce((a, l) => a + l.length, 0);
+      const withEps = Object.keys(w).map(Number).filter((n) => (w[n] || []).length);
+      let cur = withEps.length ? Math.max(...withEps) : 1;
+      let info = seasons.find((s) => s.n === cur);
+      let seen = (w[cur] || []).length;
+      // Temporada actual terminada y hay otra después: mostramos la siguiente
+      if (info && seen >= info.eps && seasons.find((s) => s.n === cur + 1)) {
+        cur += 1; info = seasons.find((s) => s.n === cur); seen = (w[cur] || []).length;
+      }
+      const label = info ? `T${cur} · ${seen}/${info.eps} episodios` : `T${cur} · ${plural(seen, 'episodio', 'episodios')}`;
+      return { label, pct: totalEps ? Math.min(1, watchedTotal / totalEps) : 0, watchedTotal, totalEps };
+    }
+
+    /* =====================================================================
+       API (TMDB v3) + datos de ejemplo
+       ===================================================================== */
+    const API = 'https://api.themoviedb.org/3';
+    const IMG = 'https://image.tmdb.org/t/p/';
+    const img = (path, size = 'w342') => (path ? IMG + size + path : null);
+    const DETAIL_PARAMS = { append_to_response: 'watch/providers,recommendations' };
+    // Token v4 (JWT, empieza por "eyJ") o API key v3 (32 caracteres)
+    const isV4 = (k) => k.startsWith('eyJ') || k.length > 60;
+
+    class ApiError extends Error {
+      constructor(status, msg) { super(msg); this.status = status; }
+    }
+
+    const memCache = new Map(); // caché en memoria para no repetir peticiones en la misma sesión
+
+    async function tmdb(path, params = {}, { key, cacheMs = 5 * 60e3, force = false } = {}) {
+      key = (key ?? store.state.settings.apiKey ?? '').trim();
+      if (!key) return mockApi(path, params); // sin clave → datos de ejemplo
+
+      const url = new URL(API + path);
+      const all = { language: 'es-ES', region: 'ES', ...params };
+      Object.entries(all).forEach(([k, v]) => url.searchParams.set(k, v));
+      const headers = { accept: 'application/json' };
+      if (isV4(key)) headers.Authorization = 'Bearer ' + key;
+      else url.searchParams.set('api_key', key);
+
+      const ck = url.toString();
+      const hit = memCache.get(ck);
+      if (!force && hit && Date.now() - hit.t < cacheMs) return hit.data;
+
+      let res;
+      try { res = await fetch(url, { headers }); }
+      catch (e) { throw new ApiError(0, 'Sin conexión'); }
+      if (!res.ok) throw new ApiError(res.status, 'Error ' + res.status);
+      const data = await res.json();
+      memCache.set(ck, { t: Date.now(), data });
+      return data;
+    }
+
+    function reportError(e) {
+      if (e && e.status === 401) toast('La clave de TMDB no es válida. Revísala en Ajustes.');
+      else if (e && e.status === 429) toast('Demasiadas peticiones a TMDB. Espera un momento.');
+      else if (e && e.status === 404) toast('No se encontró ese título en TMDB.');
+      else toast('Sin conexión con TMDB. Mostrando lo que hay guardado.');
+    }
+
+    // Hook de carga: { loading, data, error }. Si fn devuelve null no hace nada.
+    function useApi(fn, deps) {
+      const [st, setSt] = useState({ loading: true, data: null, error: null });
+      useEffect(() => {
+        let alive = true;
+        const p = fn();
+        if (!p) { setSt({ loading: false, data: null, error: null }); return; }
+        setSt({ loading: true, data: null, error: null });
+        p.then((data) => alive && setSt({ loading: false, data, error: null }))
+          .catch((e) => { if (!alive) return; reportError(e); setSt({ loading: false, data: null, error: e }); });
+        return () => { alive = false; };
+      }, deps);
+      return st;
+    }
+
+    // ---- Datos de ejemplo (títulos ficticios) para probar sin clave ----
+    const MOCK_DB = [
+      { media_type: 'tv', id: 900001, name: 'El Faro del Norte', first_air_date: '2023-02-10', vote_average: 8.2, genres: ['Drama', 'Misterio'], seasons: [8, 8, 6], status: 'Returning Series', nextIn: 3, providers: ['Netflix'], overview: 'Una farera descubre que las señales luminosas de su isla esconden mensajes enviados desde otra época.' },
+      { media_type: 'tv', id: 900003, name: 'Los Jardines de Marte', first_air_date: '2024-10-01', vote_average: 7.6, genres: ['Ciencia ficción'], seasons: [6, 8], status: 'Returning Series', nextIn: 0, providers: ['Max'], overview: 'Los primeros colonos de Marte intentan cultivar un jardín mientras la Tierra deja de responder.' },
+      { media_type: 'tv', id: 900002, name: 'Código Medianoche', first_air_date: '2021-09-01', vote_average: 7.9, genres: ['Crimen', 'Suspense'], seasons: [10, 10], status: 'Ended', providers: ['Prime Video'], overview: 'Una unidad de delitos informáticos persigue a un hacker que solo actúa a las doce en punto.' },
+      { media_type: 'tv', id: 900004, name: 'Turno de Noche', first_air_date: '2019-01-15', vote_average: 7.1, genres: ['Comedia'], seasons: [12, 12, 10], status: 'Canceled', providers: [], overview: 'Las desventuras del personal de un hotel de carretera que nunca cierra.' },
+      { media_type: 'movie', id: 800001, title: 'Ciudad de Neón', release_date: '2024-05-03', vote_average: 7.4, runtime: 118, genres: ['Ciencia ficción', 'Acción'], providers: ['Disney+'], overview: 'En una metrópolis donde la luz nunca se apaga, una mensajera descubre una conspiración.' },
+      { media_type: 'movie', id: 800002, title: 'La Última Receta', release_date: '2023-11-17', vote_average: 6.9, runtime: 104, genres: ['Comedia', 'Drama'], providers: ['Filmin'], overview: 'Un chef retirado vuelve a la cocina para reconstruir el libro de recetas de su abuela.' },
+      { media_type: 'movie', id: 800003, title: 'Tormenta de Arena', release_date: addDaysStr(12), vote_average: 0, runtime: 131, genres: ['Aventura'], providers: [], overview: 'Una expedición cruza el desierto en busca de una ciudad que aparece y desaparece.' },
+      { media_type: 'movie', id: 800004, title: 'El Archivo Perdido', release_date: addDaysStr(26), vote_average: 0, runtime: 97, genres: ['Suspense'], providers: [], overview: 'Una archivera encuentra una caja que nadie debería haber abierto.' }
+    ];
+    const mockResult = (m) => ({
+      id: m.id, media_type: m.media_type, title: m.title, name: m.name, poster_path: null, backdrop_path: null,
+      release_date: m.release_date, first_air_date: m.first_air_date, vote_average: m.vote_average, overview: m.overview
+    });
+    function mockDetail(m) {
+      const base = {
+        ...mockResult(m),
+        genres: m.genres.map((name, i) => ({ id: i, name })),
+        'watch/providers': { results: { ES: { flatrate: m.providers.map((p, i) => ({ provider_id: i, provider_name: p, logo_path: null })) } } },
+        recommendations: { results: MOCK_DB.filter((x) => x.id !== m.id).slice(0, 5).map(mockResult) }
+      };
+      if (m.media_type === 'movie') return { ...base, runtime: m.runtime };
+      const last = m.seasons.length;
+      const nextEp = m.nextIn != null ? Math.ceil(m.seasons[last - 1] / 2) : null;
+      return {
+        ...base,
+        status: m.status,
+        number_of_seasons: last,
+        seasons: m.seasons.map((c, i) => ({ season_number: i + 1, episode_count: c, name: `Temporada ${i + 1}` })),
+        next_episode_to_air: nextEp ? { season_number: last, episode_number: nextEp, name: `Capítulo ${nextEp}`, air_date: addDaysStr(m.nextIn) } : null,
+        last_episode_to_air: { season_number: last, episode_number: nextEp ? nextEp - 1 : m.seasons[last - 1], name: 'Capítulo anterior', air_date: addDaysStr((m.nextIn ?? -300) - 7) }
+      };
+    }
+    function mockSeason(m, n) {
+      const count = m.seasons[n - 1] || 0;
+      const isLast = n === m.seasons.length;
+      const nextEp = isLast && m.nextIn != null ? Math.ceil(count / 2) : null;
+      return {
+        season_number: n,
+        episodes: Array.from({ length: count }, (_, i) => {
+          const e = i + 1;
+          const date = nextEp ? addDaysStr(m.nextIn + (e - nextEp) * 7) : addDaysStr(-400 * (m.seasons.length - n + 1) + e * 7);
+          return { episode_number: e, name: `Capítulo ${e}`, air_date: date, runtime: 45 };
+        })
+      };
+    }
+    async function mockApi(path, params) {
+      await sleep(350); // simula la red para ver los esqueletos
+      let m;
+      if (path === '/authentication') return { success: true };
+      if (path === '/trending/all/week') return { results: MOCK_DB.filter((x) => !(x.release_date && daysUntil(x.release_date) > 0)).map(mockResult) };
+      if (path === '/movie/upcoming') return { results: MOCK_DB.filter((x) => x.media_type === 'movie' && daysUntil(x.release_date) > 0).map(mockResult) };
+      if (path === '/search/multi') {
+        const q = norm(params.query);
+        return { results: MOCK_DB.filter((x) => norm(x.title || x.name).includes(q)).map(mockResult) };
+      }
+      if ((m = path.match(/^\/tv\/(\d+)\/season\/(\d+)$/))) {
+        const it = MOCK_DB.find((x) => x.media_type === 'tv' && x.id === +m[1]);
+        if (it) return mockSeason(it, +m[2]);
+      }
+      if ((m = path.match(/^\/(movie|tv)\/(\d+)$/))) {
+        const it = MOCK_DB.find((x) => x.media_type === m[1] && x.id === +m[2]);
+        if (it) return mockDetail(it);
+      }
+      throw new ApiError(404, 'No encontrado');
+    }
+
+    // Datos básicos que guardamos de cada título a partir de la respuesta de TMDB
+    const pickEp = (e) => (e ? { season: e.season_number, episode: e.episode_number, name: e.name || '', date: e.air_date || '' } : null);
+    function baseInfo(type, d) {
+      const info = {
+        title: d.title || d.name || 'Sin título',
+        poster: d.poster_path || null,
+        backdrop: d.backdrop_path || null,
+        year: yearOf(d.release_date || d.first_air_date)
+      };
+      if (type === 'tv') {
+        info.tvStatus = d.status || '';
+        info.seasonsInfo = (d.seasons || []).filter((s) => s.season_number > 0).map((s) => ({ n: s.season_number, eps: s.episode_count || 0 }));
+        info.nextEpisode = pickEp(d.next_episode_to_air);
+      } else {
+        info.runtime = d.runtime || 0;
+      }
+      return info;
+    }
+
+    /* =====================================================================
+       AVISOS DE ESTRENOS (comprobación de series seguidas)
+       ===================================================================== */
+    const SIX_HOURS = 6 * 3600e3;
+    const sameEp = (a, b) => a && b && a.season === b.season && a.episode === b.episode && a.date === b.date;
+
+    // Compara la respuesta fresca de /tv/{id} con lo guardado y genera avisos
+    function applySeriesUpdate(id, d, { notify = true } = {}) {
+      const k = keyOf('tv', id);
+      const saved = store.state.titles[k];
+      if (!saved) return;
+      const info = baseInfo('tv', d);
+      const seasons = d.number_of_seasons || 0;
+      const patch = { ...info };
+      const canNotify = notify && saved.followed;
+
+      if (seasons > (saved.knownSeasons || 0)) {
+        if (saved.knownSeasons) {
+          patch.newSeason = true;
+          if (canNotify) addNotification(k, 'season', `¡Nueva temporada de «${info.title}»! Ya está anunciada la temporada ${seasons}.`);
+        }
+        patch.knownSeasons = seasons;
+      }
+      const next = info.nextEpisode;
+      if (canNotify && next && next.date && !sameEp(next, saved.nextEpisode) && daysUntil(next.date) >= 0) {
+        addNotification(k, 'episode',
+          `Nuevo episodio de «${info.title}»: T${next.season}·E${next.episode}${next.name ? ` «${next.name}»` : ''}, ${fmtDate(next.date, { weekday: 'long', day: 'numeric', month: 'long' })}.`);
+      }
+      upsertTitle('tv', id, patch, { touch: false });
+    }
+
+    // Como máximo una vez cada 6 horas (o forzada desde Ajustes / Inicio)
+    async function checkFollowedSeries({ force = false } = {}) {
+      const s = store.state.settings;
+      if (store.state.checking) return;
+      if (!force && Date.now() - (s.lastCheck || 0) < SIX_HOURS) return;
+      const followed = Object.values(store.state.titles).filter((t) => t.type === 'tv' && t.followed);
+      store.set('checking', true);
+      let ok = 0, failed = 0;
+      try {
+        for (let i = 0; i < followed.length; i++) {
+          if (i) await sleep(400); // escalonado: ~2,5 peticiones/s, muy por debajo del límite de TMDB
+          try {
+            const d = await tmdb(`/tv/${followed[i].id}`, {}, { force: true });
+            applySeriesUpdate(followed[i].id, d);
+            ok++;
+          } catch (e) {
+            failed++;
+            if (e.status === 0 || e.status === 401) break; // sin red o clave mala: no seguimos
+          }
+        }
+        if (ok || !followed.length) store.set('settings', (st) => ({ ...st, lastCheck: Date.now() }));
+        if (failed && force) toast('No se pudieron comprobar todas las series.');
+      } finally {
+        store.set('checking', false);
+      }
+    }
+
+    /* =====================================================================
+       PIN (SHA-256 con Web Crypto)
+       ===================================================================== */
+    const cryptoOk = !!(window.crypto && crypto.subtle);
+    async function sha256Pin(pin) {
+      const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('misseries-pin:' + pin));
+      return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    /* =====================================================================
+       ROUTER (rutas por hash + historial del navegador)
+       ===================================================================== */
+    // history.state.d = profundidad dentro de la app, para saber si "atrás" sale de ella
+    function parseRoute() {
+      const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
+      return { name: parts[0] || 'inicio', params: parts.slice(1) };
+    }
+    function navigate(path, { replace = false } = {}) {
+      const depth = (history.state && history.state.d) || 0;
+      if (replace) history.replaceState({ d: depth }, '', '#' + path);
+      else history.pushState({ d: depth + 1 }, '', '#' + path);
+      window.dispatchEvent(new Event('ms-route'));
+    }
+    function goBack(fallback = '/inicio') {
+      if (((history.state && history.state.d) || 0) > 0) history.back(); // también lo hace el gesto/botón atrás
+      else navigate(fallback, { replace: true });
+    }
+    const openTitle = (type, id) => navigate(`/${type === 'tv' ? 'serie' : 'pelicula'}/${id}`);
+    function useRoute() {
+      const [r, setR] = useState(parseRoute);
+      useEffect(() => {
+        const on = () => setR(parseRoute());
+        ['popstate', 'hashchange', 'ms-route'].forEach((ev) => window.addEventListener(ev, on));
+        return () => ['popstate', 'hashchange', 'ms-route'].forEach((ev) => window.removeEventListener(ev, on));
+      }, []);
+      return r;
+    }
+
+    /* =====================================================================
+       COMPONENTES
+       ===================================================================== */
+    // Icono de lucide renderizado como SVG de Preact
+    function Icon({ name, size = 20, class: cls = '', fill = 'none', strokeWidth = 2 }) {
+      const node = Lucide[name];
+      if (!node) return null;
+      const children = node[0] === 'svg' ? node[2] : node;
+      return h('svg', {
+        xmlns: 'http://www.w3.org/2000/svg', width: size, height: size, viewBox: '0 0 24 24', fill,
+        stroke: 'currentColor', 'stroke-width': strokeWidth, 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+        class: cls, 'aria-hidden': 'true'
+      }, children.map(([tag, attrs], i) => h(tag, { ...attrs, key: i })));
+    }
+
+    // Póster con marcador de posición si no hay imagen
+    function Poster({ path, title = '', id = 0, size = 'w342', class: cls = '' }) {
+      const [err, setErr] = useState(false);
+      if (!path || err) {
+        const hue = (Number(id) * 47 || title.length * 37) % 360;
+        return html`<div class=${'flex flex-col items-center justify-center text-center p-2 overflow-hidden ' + cls}
+          style=${{ background: `linear-gradient(160deg, hsl(${hue} 35% 24%), hsl(${(hue + 40) % 360} 30% 10%))` }}>
+          <${Icon} name="Clapperboard" size=${20} class="text-white/40 mb-1" />
+          <span class="text-[11px] font-semibold text-white/75 line-clamp-3 leading-tight">${title}</span>
+        </div>`;
+      }
+      return html`<img src=${img(path, size)} alt=${title} loading="lazy" decoding="async"
+        onError=${() => setErr(true)} class=${'object-cover bg-card2 ' + cls} />`;
+    }
+
+    // Tarjeta de póster para cuadrículas y carruseles
+    function PosterCard({ item, sub, badge }) {
+      const { titles } = useStore();
+      const type = item.media_type || item.type;
+      const title = item.title || item.name || '';
+      const saved = titles[keyOf(type, item.id)];
+      const year = yearOf(item.release_date || item.first_air_date);
+      return html`<button class="press text-left w-full" onClick=${() => openTitle(type, item.id)}>
+        <div class="relative">
+          <${Poster} path=${item.poster_path} title=${title} id=${item.id} class="w-full aspect-[2/3] rounded-xl shadow-soft" />
+          ${badge && html`<span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-accent text-black text-[10px] font-bold">${badge}</span>`}
+          ${saved && saved.status && html`<span class="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 backdrop-blur flex items-center justify-center text-accent">
+            <${Icon} name=${saved.status === 'watched' ? 'Check' : saved.status === 'watching' ? 'Eye' : 'Bookmark'} size=${13} strokeWidth=${2.5} />
+          </span>`}
+        </div>
+        <div class="mt-1.5 text-[13px] font-medium leading-tight line-clamp-2">${title}</div>
+        <div class="text-[11px] text-zinc-500 mt-0.5">${sub || [year, type === 'tv' ? 'Serie' : 'Película'].filter(Boolean).join(' · ')}</div>
+      </button>`;
+    }
+
+    const PosterGrid = ({ items, subFn }) => html`<div class="grid grid-cols-3 gap-x-3 gap-y-4">
+      ${items.map((it) => html`<${PosterCard} key=${(it.media_type || it.type) + it.id} item=${it} sub=${subFn && subFn(it)} />`)}
+    </div>`;
+
+    const SkeletonGrid = ({ n = 9 }) => html`<div class="grid grid-cols-3 gap-x-3 gap-y-4">
+      ${Array.from({ length: n }, (_, i) => html`<div key=${i}><div class="skeleton aspect-[2/3] rounded-xl"></div>
+        <div class="skeleton h-3 rounded mt-2 w-4/5"></div><div class="skeleton h-2.5 rounded mt-1.5 w-1/2"></div></div>`)}
+    </div>`;
+    const SkeletonRows = ({ n = 3 }) => html`<div class="space-y-3">
+      ${Array.from({ length: n }, (_, i) => html`<div key=${i} class="flex gap-3 p-2.5 rounded-2xl bg-card">
+        <div class="skeleton w-14 h-20 rounded-xl"></div>
+        <div class="flex-1 py-1"><div class="skeleton h-3.5 rounded w-3/4"></div><div class="skeleton h-3 rounded w-1/2 mt-2"></div></div>
+      </div>`)}
+    </div>`;
+
+    function EmptyState({ icon = 'Popcorn', title, text, action }) {
+      return html`<div class="flex flex-col items-center text-center px-6 py-10 rounded-3xl bg-card/60 border border-line/60">
+        <div class="w-14 h-14 rounded-2xl bg-accent/10 text-accent flex items-center justify-center mb-3"><${Icon} name=${icon} size=${28} /></div>
+        <div class="font-semibold">${title}</div>
+        ${text && html`<p class="text-sm text-zinc-400 mt-1 max-w-xs">${text}</p>`}
+        ${action && html`<button class="press mt-4 h-11 px-5 rounded-full bg-accent text-black font-semibold shadow-glow" onClick=${action.onClick}>${action.label}</button>`}
+      </div>`;
+    }
+
+    function Section({ title, icon, right, children }) {
+      return html`<section class="mt-6">
+        <div class="flex items-center gap-2 mb-3 min-h-[44px]">
+          ${icon && html`<${Icon} name=${icon} size=${18} class="text-accent" />`}
+          <h2 class="text-[17px] font-bold flex-1">${title}</h2>
+          ${right}
+        </div>
+        ${children}
+      </section>`;
+    }
+
+    // Estrellas de 1 a 5 (pulsar la misma estrella otra vez la borra)
+    function Stars({ value = 0, onChange, size = 30 }) {
+      return html`<div class="flex items-center gap-1">
+        ${[1, 2, 3, 4, 5].map((n) => html`<button key=${n} class=${onChange ? 'icon-btn' : ''} aria-label=${`${n} estrellas`}
+          disabled=${!onChange} onClick=${() => onChange && onChange(value === n ? 0 : n)}>
+          <${Icon} name="Star" size=${size} fill=${n <= value ? 'currentColor' : 'none'} strokeWidth=${1.8}
+            class=${n <= value ? 'text-accent' : 'text-zinc-600'} />
+        </button>`)}
+      </div>`;
+    }
+
+    // Cabecera de las pestañas: título, campana con contador y ajustes
+    function TopBar({ title }) {
+      const { notifications, settings } = useStore();
+      const unread = notifications.filter((n) => !n.read).length;
+      return html`<header class="sticky top-0 z-20 bg-base/85 backdrop-blur-xl pt-safe">
+        <div class="h-14 pl-4 pr-1 flex items-center gap-1">
+          <h1 class="text-[24px] font-extrabold tracking-tight flex-1 truncate">${title}</h1>
+          ${!settings.apiKey && html`<button class="h-8 px-3 mr-1 rounded-full bg-accent/15 text-accent text-xs font-semibold" onClick=${() => navigate('/ajustes')}>Modo demo</button>`}
+          <button class="icon-btn relative" aria-label="Avisos" onClick=${() => navigate('/avisos')}>
+            <${Icon} name="Bell" size=${22} />
+            ${unread > 0 && html`<span class="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-black text-[11px] font-bold flex items-center justify-center">${unread > 9 ? '9+' : unread}</span>`}
+          </button>
+          <button class="icon-btn" aria-label="Ajustes" onClick=${() => navigate('/ajustes')}><${Icon} name="Settings" size=${22} /></button>
+        </div>
+      </header>`;
+    }
+
+    // Página superpuesta con botón de volver (Ajustes, Avisos)
+    function OverlayPage({ title, right, children }) {
+      return html`<div class="fixed inset-0 z-30 bg-base overflow-y-auto overscroll-contain overlay-enter px-safe">
+        <header class="sticky top-0 z-10 bg-base/85 backdrop-blur-xl pt-safe">
+          <div class="h-14 px-1 flex items-center gap-1">
+            <button class="icon-btn" aria-label="Volver" onClick=${() => goBack()}><${Icon} name="ChevronLeft" size=${28} /></button>
+            <h1 class="text-lg font-bold flex-1 truncate">${title}</h1>
+            ${right}
+          </div>
+        </header>
+        <div class="px-4 page-end">${children}</div>
+      </div>`;
+    }
+
+    const TABS = [
+      { id: 'inicio', label: 'Inicio', icon: 'House' },
+      { id: 'buscar', label: 'Buscar', icon: 'Search' },
+      { id: 'lista', label: 'Mi lista', icon: 'ListVideo' },
+      { id: 'descubrir', label: 'Descubrir', icon: 'Compass' }
+    ];
+    function BottomNav({ active, onTab }) {
+      return html`<nav class="fixed bottom-0 inset-x-0 z-20 bg-base/90 backdrop-blur-xl border-t border-line/70 pb-safe px-safe">
+        <div class="grid grid-cols-4 h-[60px]">
+          ${TABS.map((t) => html`<button key=${t.id} onClick=${() => onTab(t.id)}
+            class=${'flex flex-col items-center justify-center gap-0.5 transition-colors ' + (active === t.id ? 'text-accent' : 'text-zinc-500')}>
+            <${Icon} name=${t.icon} size=${24} strokeWidth=${active === t.id ? 2.4 : 2} />
+            <span class="text-[10.5px] font-medium">${t.label}</span>
+          </button>`)}
+        </div>
+      </nav>`;
+    }
+
+    function ToastHost() {
+      const [items, setItems] = useState([]);
+      useEffect(() => {
+        const on = (e) => {
+          const id = Math.random();
+          setItems((x) => [...x.slice(-1), { id, msg: e.detail }]);
+          setTimeout(() => setItems((x) => x.filter((i) => i.id !== id)), 3500);
+        };
+        window.addEventListener('ms-toast', on);
+        return () => window.removeEventListener('ms-toast', on);
+      }, []);
+      return html`<div class="fixed inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none px-4 toast-pos">
+        ${items.map((i) => html`<div key=${i.id} class="pop-in max-w-sm px-4 py-2.5 rounded-2xl bg-card2/95 backdrop-blur border border-line text-[13px] text-zinc-200 shadow-soft flex items-center gap-2">
+          <${Icon} name="Info" size=${16} class="text-accent shrink-0" /><span>${i.msg}</span>
+        </div>`)}
+      </div>`;
+    }
+
+    // Diálogo de confirmación propio (más nativo que window.confirm)
+    let openDialog = null;
+    const confirmDialog = (opts) => new Promise((resolve) => (openDialog ? openDialog({ ...opts, resolve }) : resolve(window.confirm(opts.message))));
+    function DialogHost() {
+      const [d, setD] = useState(null);
+      openDialog = setD;
+      if (!d) return null;
+      const close = (v) => { d.resolve(v); setD(null); };
+      return html`<div class="fixed inset-0 z-[80] bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 pb-safe" onClick=${() => close(false)}>
+        <div class="pop-in w-full max-w-sm rounded-3xl bg-card2 border border-line p-5 shadow-soft mb-4" onClick=${(e) => e.stopPropagation()}>
+          <div class="text-lg font-bold">${d.title || '¿Seguro?'}</div>
+          <p class="text-sm text-zinc-400 mt-1.5">${d.message}</p>
+          <div class="grid grid-cols-2 gap-2 mt-5">
+            <button class="press h-12 rounded-2xl bg-card text-zinc-200 font-semibold" onClick=${() => close(false)}>Cancelar</button>
+            <button class=${'press h-12 rounded-2xl font-semibold ' + (d.danger ? 'bg-rose-500 text-white' : 'bg-accent text-black')} onClick=${() => close(true)}>${d.confirmText || 'Aceptar'}</button>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    // Teclado numérico para el PIN
+    function PinPad({ title, subtitle, onComplete }) {
+      const [pin, setPin] = useState('');
+      const [shake, setShake] = useState(false);
+      const busy = useRef(false);
+      const pinRef = useRef('');
+      pinRef.current = pin;
+
+      const press = async (k) => {
+        if (busy.current) return;
+        if (k === 'del') { setPin((p) => p.slice(0, -1)); return; }
+        const p = (pinRef.current + k).slice(0, 4);
+        setPin(p);
+        if (p.length === 4) {
+          busy.current = true;
+          await sleep(160);
+          let ok = true;
+          try { ok = await onComplete(p); } catch (e) { ok = false; }
+          busy.current = false;
+          if (ok === false) { setShake(true); navigator.vibrate && navigator.vibrate(80); setTimeout(() => setShake(false), 420); }
+          setPin('');
+        }
+      };
+      // Teclado físico (por si acaso)
+      useEffect(() => {
+        const on = (e) => { if (/^\d$/.test(e.key)) press(e.key); else if (e.key === 'Backspace') press('del'); };
+        window.addEventListener('keydown', on);
+        return () => window.removeEventListener('keydown', on);
+      }, []);
+
+      const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
+      return html`<div class="flex flex-col items-center no-select">
+        <div class="text-lg font-semibold">${title}</div>
+        ${subtitle && html`<div class="text-sm text-zinc-400 mt-1">${subtitle}</div>`}
+        <div class=${'flex gap-4 my-8 ' + (shake ? 'shake' : '')}>
+          ${[0, 1, 2, 3].map((i) => html`<span key=${i} class=${'w-3.5 h-3.5 rounded-full border-2 transition-colors ' + (i < pin.length ? 'bg-accent border-accent' : 'border-zinc-600')}></span>`)}
+        </div>
+        <div class="grid grid-cols-3 gap-4">
+          ${keys.map((k, i) => k === ''
+            ? html`<span key=${i}></span>`
+            : html`<button key=${i} aria-label=${k === 'del' ? 'Borrar' : k} onClick=${() => press(k)}
+                class=${'w-[74px] h-[74px] rounded-full text-2xl font-medium flex items-center justify-center transition active:scale-95 ' + (k === 'del' ? 'text-zinc-400 active:bg-white/5' : 'bg-card2 active:bg-zinc-700')}>
+                ${k === 'del' ? html`<${Icon} name="Delete" size=${26} />` : k}
+              </button>`)}
+        </div>
+      </div>`;
+    }
+
+    // Formulario para la clave de TMDB (bienvenida y ajustes)
+    function ApiKeyForm({ onSaved }) {
+      const [val, setVal] = useState('');
+      const [st, setSt] = useState({ s: 'idle' }); // idle | testing | ok | error
+      const test = async () => {
+        const key = val.trim();
+        if (!key) return;
+        setSt({ s: 'testing' });
+        try {
+          await tmdb('/authentication', {}, { key, cacheMs: 0 });
+          setSt({ s: 'ok' });
+        } catch (e) {
+          setSt({ s: 'error', msg: e.status === 401 ? 'La clave no es válida. Revisa que la has copiado entera.' : 'No se pudo conectar con TMDB. Revisa tu conexión.' });
+        }
+      };
+      const saveKey = () => {
+        store.set('settings', (s) => ({ ...s, apiKey: val.trim(), lastCheck: 0 }));
+        memCache.clear();
+        toast('Clave guardada en este dispositivo');
+        setVal(''); setSt({ s: 'idle' });
+        onSaved && onSaved();
+      };
+      return html`<div>
+        <textarea rows="3" value=${val} placeholder="Pega aquí tu token de lectura (eyJhbGci…) o tu API key"
+          autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"
+          onInput=${(e) => { setVal(e.target.value); setSt({ s: 'idle' }); }}
+          class="w-full rounded-2xl bg-card2 border border-line focus:border-accent outline-none p-3 font-mono text-[13px] text-zinc-200 resize-none placeholder:text-zinc-500 placeholder:font-sans"></textarea>
+        ${st.s === 'ok' && html`<div class="mt-2 text-sm text-emerald-400 flex items-center gap-1.5"><${Icon} name="Check" size=${16} />Conexión correcta</div>`}
+        ${st.s === 'error' && html`<div class="mt-2 text-sm text-rose-400">${st.msg}</div>`}
+        <div class="grid grid-cols-2 gap-2 mt-3">
+          <button class="press h-12 rounded-2xl bg-card2 border border-line font-semibold disabled:opacity-40 flex items-center justify-center gap-2"
+            disabled=${!val.trim() || st.s === 'testing'} onClick=${test}>
+            ${st.s === 'testing' ? html`<${Icon} name="LoaderCircle" size=${18} class="animate-spin" />` : html`<${Icon} name="Wifi" size=${18} />`}
+            Probar conexión
+          </button>
+          <button class="press h-12 rounded-2xl bg-accent text-black font-semibold disabled:opacity-40" disabled=${st.s !== 'ok'} onClick=${saveKey}>Guardar</button>
+        </div>
+      </div>`;
+    }
+
+    /* =====================================================================
+       PANTALLAS
+       ===================================================================== */
+
+    // ---------- Bienvenida (primera vez) ----------
+    function WelcomeScreen() {
+      return html`<div class="min-h-screen pt-safe pb-safe px-safe screen-enter">
+        <div class="px-6 pt-10 pb-10 max-w-md mx-auto">
+          <img src="./icon.svg" alt="" class="w-20 h-20 rounded-[22px] shadow-glow" />
+          <h1 class="text-3xl font-extrabold mt-6 tracking-tight">Bienvenido a <span class="text-accent">Mis Series</span></h1>
+          <p class="text-zinc-400 mt-2">Lleva el control de tus películas y series. Todo se guarda solo en este dispositivo.</p>
+
+          <div class="mt-8 rounded-3xl bg-card border border-line p-4">
+            <div class="font-semibold flex items-center gap-2"><${Icon} name="KeyRound" size=${18} class="text-accent" />Conecta con TMDB</div>
+            <ol class="text-sm text-zinc-400 mt-2 space-y-1 list-decimal pl-5">
+              <li>Crea una cuenta gratis en <a class="text-accent" href="https://www.themoviedb.org/signup" target="_blank" rel="noopener">themoviedb.org</a>.</li>
+              <li>Ve a Ajustes → API y solicita una clave (uso personal).</li>
+              <li>Copia el «Token de acceso de lectura a la API» (recomendado) o la «Clave de la API».</li>
+            </ol>
+            <div class="mt-4"><${ApiKeyForm} onSaved=${() => navigate('/inicio', { replace: true })} /></div>
+          </div>
+
+          <button class="press w-full mt-4 h-12 rounded-2xl text-zinc-300 font-medium" onClick=${() => store.set('settings', (s) => ({ ...s, demo: true }))}>
+            Explorar con datos de ejemplo
+          </button>
+          <p class="text-xs text-zinc-500 text-center mt-6">Tu clave se guarda solo en este dispositivo y nunca sale de él salvo hacia TMDB.</p>
+        </div>
+      </div>`;
+    }
+
+    // ---------- Bloqueo por PIN ----------
+    function LockScreen({ onUnlock }) {
+      const verify = async (pin) => {
+        const ok = (await sha256Pin(pin)) === store.state.settings.pinHash;
+        if (ok) onUnlock();
+        return ok;
+      };
+      const reset = async () => {
+        const ok = await confirmDialog({ title: '¿Restablecer la app?', message: 'Se borrarán todos tus datos (listas, notas, PIN y clave) de este dispositivo. No se puede deshacer.', confirmText: 'Borrar todo', danger: true });
+        if (ok) { PERSISTED.forEach(removeKey); location.reload(); }
+      };
+      return html`<div class="fixed inset-0 bg-base flex flex-col items-center justify-center pt-safe pb-safe">
+        <div class="w-14 h-14 rounded-2xl bg-accent/10 text-accent flex items-center justify-center mb-6"><${Icon} name="Lock" size=${28} /></div>
+        <${PinPad} title="Introduce tu PIN" subtitle="Mis Series está protegida" onComplete=${verify} />
+        <button class="mt-8 h-11 px-4 text-sm text-zinc-500" onClick=${reset}>¿Olvidaste el PIN?</button>
+      </div>`;
+    }
+
+    // ---------- Inicio ----------
+    function HomeScreen() {
+      const { titles, checking, settings } = useStore();
+      const all = Object.values(titles);
+      const today = todayStr();
+      const followed = all.filter((t) => t.type === 'tv' && t.followed);
+      const upcoming = followed
+        .filter((t) => t.nextEpisode && t.nextEpisode.date && t.nextEpisode.date >= today)
+        .sort((a, b) => a.nextEpisode.date.localeCompare(b.nextEpisode.date));
+      const newSeasons = all.filter((t) => t.type === 'tv' && t.newSeason);
+      const trending = useApi(() => tmdb('/trending/all/week'), [settings.apiKey]);
+      const trendItems = ((trending.data && trending.data.results) || []).filter((x) => x.media_type === 'movie' || x.media_type === 'tv').slice(0, 18);
+
+      return html`<div>
+        <${TopBar} title="Mis Series" />
+        <div class="px-4">
+          <${Section} title="Próximos episodios de mis series" icon="CalendarDays"
+            right=${followed.length > 0 && html`<button class="icon-btn text-zinc-400" aria-label="Comprobar novedades" onClick=${() => checkFollowedSeries({ force: true })}>
+              <${Icon} name="RefreshCw" size=${18} class=${checking ? 'animate-spin' : ''} /></button>`}>
+            ${followed.length === 0
+              ? html`<${EmptyState} icon="BellRing" title="Aún no sigues ninguna serie"
+                  text="Abre una serie y pulsa «Seguir serie» para ver aquí sus próximos episodios."
+                  action=${{ label: 'Buscar una serie', onClick: () => navigate('/buscar', { replace: true }) }} />`
+              : upcoming.length === 0
+                ? html`<div class="rounded-2xl bg-card p-4 text-sm text-zinc-400">Ninguna de tus series tiene episodios anunciados ahora mismo. Te avisaremos cuando cambie.</div>`
+                : html`<div class="space-y-2.5">${upcoming.map((t) => html`<${UpcomingRow} key=${t.id} t=${t} />`)}</div>`}
+          <//>
+
+          ${newSeasons.length > 0 && html`<${Section} title="Nuevas temporadas" icon="Sparkles">
+            <div class="flex gap-3 overflow-x-auto no-scrollbar snap-x-row -mx-4 px-4">
+              ${newSeasons.map((t) => html`<div key=${t.id} class="w-[31%] shrink-0">
+                <${PosterCard} item=${{ id: t.id, media_type: 'tv', name: t.title, poster_path: t.poster }} badge="¡Nueva temporada!" sub=${`Temporada ${t.knownSeasons}`} />
+              </div>`)}
+            </div>
+          <//>`}
+
+          <${Section} title="Tendencias esta semana" icon="TrendingUp">
+            ${trending.loading ? html`<${SkeletonGrid} n=${9} />`
+              : trendItems.length ? html`<${PosterGrid} items=${trendItems} />`
+              : html`<${EmptyState} icon="WifiOff" title="No hay tendencias ahora" text="Comprueba tu conexión e inténtalo más tarde." />`}
+          <//>
+        </div>
+      </div>`;
+    }
+
+    function UpcomingRow({ t }) {
+      const ep = t.nextEpisode;
+      const n = daysUntil(ep.date);
+      const soon = n <= 1;
+      return html`<button class="press w-full flex items-center gap-3 p-2.5 rounded-2xl bg-card text-left shadow-soft" onClick=${() => openTitle('tv', t.id)}>
+        <${Poster} path=${t.poster} title=${t.title} id=${t.id} size="w185" class="w-12 h-[72px] rounded-lg shrink-0" />
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold truncate">${t.title}</div>
+          <div class="text-xs text-zinc-400 truncate mt-0.5">T${ep.season} · E${ep.episode}${ep.name ? ` · ${ep.name}` : ''}</div>
+          <div class="text-[11px] text-zinc-500 mt-0.5 capitalize">${fmtDate(ep.date, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+        </div>
+        <span class=${'shrink-0 px-2.5 h-7 rounded-full text-xs font-bold flex items-center ' + (soon ? 'bg-accent text-black' : 'bg-accent/15 text-accent')}>${countdown(ep.date)}</span>
+      </button>`;
+    }
+
+    // ---------- Buscar ----------
+    function SearchScreen() {
+      const [q, setQ] = useState('');
+      const [dq, setDq] = useState('');
+      const [filter, setFilter] = useState('all');
+      const inputRef = useRef(null);
+      // Debounce de 400 ms
+      useEffect(() => { const t = setTimeout(() => setDq(q.trim()), 400); return () => clearTimeout(t); }, [q]);
+      const res = useApi(() => (dq ? tmdb('/search/multi', { query: dq, include_adult: 'false' }) : null), [dq]);
+      const results = ((res.data && res.data.results) || [])
+        .filter((x) => x.media_type === 'movie' || x.media_type === 'tv')
+        .filter((x) => filter === 'all' || x.media_type === filter);
+      const FILTERS = [{ id: 'all', label: 'Todo' }, { id: 'movie', label: 'Películas' }, { id: 'tv', label: 'Series' }];
+
+      return html`<div>
+        <${TopBar} title="Buscar" />
+        <div class="sticky z-10 bg-base/85 backdrop-blur-xl px-4 pb-3" style=${{ top: 'calc(env(safe-area-inset-top) + 56px)' }}>
+          <div class="flex items-center gap-2 h-12 px-3 rounded-2xl bg-card2 border border-line focus-within:border-accent transition-colors">
+            <${Icon} name="Search" size=${20} class="text-zinc-500" />
+            <input ref=${inputRef} type="search" enterkeyhint="search" value=${q} placeholder="Películas y series…"
+              autocapitalize="off" autocorrect="off" autocomplete="off"
+              onInput=${(e) => setQ(e.target.value)} onKeyDown=${(e) => e.key === 'Enter' && e.target.blur()}
+              class="flex-1 bg-transparent outline-none text-zinc-100 placeholder:text-zinc-500 min-w-0" />
+            ${q && html`<button class="w-9 h-9 -mr-1 flex items-center justify-center text-zinc-400" aria-label="Borrar búsqueda" onClick=${() => { setQ(''); inputRef.current && inputRef.current.focus(); }}><${Icon} name="X" size=${18} /></button>`}
+          </div>
+          <div class="flex gap-2 mt-3">
+            ${FILTERS.map((f) => html`<button key=${f.id} onClick=${() => setFilter(f.id)}
+              class=${'h-9 px-4 rounded-full text-sm font-medium transition-colors ' + (filter === f.id ? 'bg-accent text-black' : 'bg-card2 text-zinc-300')}>${f.label}</button>`)}
+          </div>
+        </div>
+        <div class="px-4 pt-2">
+          ${!dq ? html`<${EmptyState} icon="Search" title="¿Qué te apetece ver?" text="Escribe el título de una película o serie para buscarla en TMDB." />`
+            : res.loading ? html`<${SkeletonGrid} n=${9} />`
+            : results.length ? html`<${PosterGrid} items=${results} />`
+            : html`<${EmptyState} icon="SearchX" title=${`Sin resultados para «${dq}»`} text="Prueba con otro título o revisa cómo está escrito." />`}
+        </div>
+      </div>`;
+    }
+
+    // ---------- Mi lista ----------
+    const LIST_TABS = [{ id: 'watching', label: 'Viendo' }, { id: 'pending', label: 'Pendientes' }, { id: 'watched', label: 'Vistas' }];
+    function ListScreen() {
+      const { titles, watchedEpisodes } = useStore();
+      const [tab, setTab] = useState('watching');
+      const all = Object.values(titles);
+      const items = all.filter((t) => t.status === tab).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+      const count = (s) => all.filter((t) => t.status === s).length;
+      return html`<div>
+        <${TopBar} title="Mi lista" />
+        <div class="px-4">
+          <div class="grid grid-cols-3 p-1 rounded-2xl bg-card2 mt-1">
+            ${LIST_TABS.map((t) => html`<button key=${t.id} onClick=${() => setTab(t.id)}
+              class=${'h-10 rounded-xl text-sm font-semibold transition-all ' + (tab === t.id ? 'bg-accent text-black shadow-glow' : 'text-zinc-400')}>
+              ${t.label}<span class="opacity-60 font-normal"> ${count(t.id)}</span></button>`)}
+          </div>
+          <div class="mt-4 space-y-2.5">
+            ${items.length === 0
+              ? html`<${EmptyState} icon="Popcorn" title="Todavía no has añadido nada"
+                  text=${all.length === 0 ? 'Busca tu primera serie y márcala como Pendiente, Viendo o Vista.' : 'No tienes títulos en esta lista todavía.'}
+                  action=${{ label: 'Buscar', onClick: () => navigate('/buscar', { replace: true }) }} />`
+              : items.map((t) => html`<${ListRow} key=${t.type + t.id} t=${t} watched=${watchedEpisodes[t.id]} />`)}
+          </div>
+        </div>
+      </div>`;
+    }
+
+    function ListRow({ t, watched }) {
+      let progress = '', pct = null;
+      if (t.type === 'tv') { const p = seriesProgress(t, watched || {}); progress = p.label; pct = p.pct; }
+      else progress = t.runtime ? fmtRuntime(t.runtime) : '';
+      return html`<button class="press w-full flex gap-3 p-2.5 rounded-2xl bg-card text-left shadow-soft" onClick=${() => openTitle(t.type, t.id)}>
+        <${Poster} path=${t.poster} title=${t.title} id=${t.id} size="w185" class="w-16 h-24 rounded-xl shrink-0" />
+        <div class="flex-1 min-w-0 py-0.5 flex flex-col">
+          <div class="font-semibold leading-tight line-clamp-2">${t.title}</div>
+          <div class="text-xs text-zinc-500 mt-1 flex items-center gap-1">
+            <${Icon} name=${t.type === 'tv' ? 'Tv' : 'Film'} size=${12} />${t.type === 'tv' ? 'Serie' : 'Película'}${t.year ? ' · ' + t.year : ''}
+            ${t.followed && html`<${Icon} name="BellRing" size=${12} class="text-accent ml-1" />`}
+          </div>
+          <div class="mt-auto">
+            ${t.rating > 0 && html`<div class="flex gap-0.5 text-accent mb-1">${Array.from({ length: t.rating }, (_, i) => html`<${Icon} key=${i} name="Star" size=${12} fill="currentColor" />`)}</div>`}
+            ${progress && html`<div class="text-xs text-zinc-300">${progress}</div>`}
+            ${pct != null && html`<div class="h-1 rounded-full bg-zinc-800 mt-1.5 overflow-hidden"><div class="h-full bg-accent rounded-full transition-all" style=${{ width: `${Math.round(pct * 100)}%` }}></div></div>`}
+          </div>
+        </div>
+        <${Icon} name="ChevronRight" size=${18} class="text-zinc-600 self-center shrink-0" />
+      </button>`;
+    }
+
+    // ---------- Descubrir ----------
+    function DiscoverScreen() {
+      const { titles, settings } = useStore();
+      const liked = Object.values(titles)
+        .filter((t) => t.status === 'watched' && t.rating >= 4)
+        .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+        .slice(0, 6);
+      const likedKey = liked.map((t) => keyOf(t.type, t.id)).join(',');
+
+      // Mezcla las recomendaciones de tus favoritos, sin repetir lo que ya tienes
+      const recos = useApi(() => {
+        if (!liked.length) return null;
+        return (async () => {
+          const map = new Map();
+          for (let i = 0; i < liked.length; i++) {
+            const t = liked[i];
+            if (i) await sleep(250);
+            try {
+              const d = await tmdb(`/${t.type}/${t.id}`, DETAIL_PARAMS);
+              for (const r of (d.recommendations && d.recommendations.results) || []) {
+                const type = r.media_type || t.type;
+                const k = keyOf(type, r.id);
+                if (store.state.titles[k]) continue;
+                const e = map.get(k) || { item: { ...r, media_type: type }, score: 0, because: t.title };
+                e.score += 1 + (r.vote_average || 0) / 20;
+                map.set(k, e);
+              }
+            } catch (e) { reportError(e); }
+          }
+          return [...map.values()].sort((a, b) => b.score - a.score).slice(0, 18);
+        })();
+      }, [likedKey, settings.apiKey]);
+
+      const upcoming = useApi(() => tmdb('/movie/upcoming'), [settings.apiKey]);
+      const today = todayStr();
+      const upItems = ((upcoming.data && upcoming.data.results) || [])
+        .filter((m) => m.release_date && m.release_date >= today)
+        .sort((a, b) => a.release_date.localeCompare(b.release_date))
+        .map((m) => ({ ...m, media_type: 'movie' }));
+
+      return html`<div>
+        <${TopBar} title="Descubrir" />
+        <div class="px-4">
+          <${Section} title="Recomendado para ti" icon="Sparkles">
+            ${!liked.length
+              ? html`<${EmptyState} icon="Star" title="Puntúa lo que has visto"
+                  text="Marca títulos como «Vista» y dales 4 o 5 estrellas. Te recomendaremos cosas parecidas." />`
+              : recos.loading ? html`<${SkeletonGrid} n=${6} />`
+              : recos.data && recos.data.length
+                ? html`<${PosterGrid} items=${recos.data.map((r) => ({ ...r.item, _because: r.because }))} subFn=${(it) => `Por «${it._because}»`} />`
+                : html`<${EmptyState} icon="Compass" title="Sin recomendaciones nuevas" text="Puntúa más títulos para afinar las sugerencias." />`}
+          <//>
+          <${Section} title="Próximos estrenos en cines" icon="Popcorn">
+            ${upcoming.loading ? html`<${SkeletonGrid} n=${6} />`
+              : upItems.length ? html`<${PosterGrid} items=${upItems} subFn=${(m) => `${fmtDate(m.release_date, { day: 'numeric', month: 'short' })} · ${countdown(m.release_date)}`} />`
+              : html`<${EmptyState} icon="CalendarDays" title="No hay estrenos anunciados" text="Vuelve a mirar en unos días." />`}
+          <//>
+        </div>
+      </div>`;
+    }
+
+    // ---------- Detalle de película / serie ----------
+    function DetailScreen({ type, id }) {
+      const st = useStore();
+      const k = keyOf(type, id);
+      const saved = st.titles[k];
+      const res = useApi(() => tmdb(`/${type}/${id}`, DETAIL_PARAMS), [type, id, st.settings.apiKey]);
+      const d = res.data;
+
+      // Al abrir, quitamos la marca de "nueva temporada" (ya la has visto)
+      useEffect(() => { if (store.state.titles[k] && store.state.titles[k].newSeason) upsertTitle(type, id, { newSeason: false }, { touch: false }); }, []);
+      // Con datos frescos, actualizamos lo guardado (y avisamos si hay cambios)
+      useEffect(() => {
+        if (!d || !store.state.titles[k]) return;
+        if (type === 'tv') applySeriesUpdate(id, d);
+        else upsertTitle(type, id, baseInfo(type, d), { touch: false });
+      }, [d]);
+
+      // Guarda cambios del usuario añadiendo los datos básicos del título
+      const save = (patch) => {
+        const extra = d ? baseInfo(type, d) : {};
+        if (type === 'tv' && d && !(saved && saved.knownSeasons)) extra.knownSeasons = d.number_of_seasons || 0;
+        upsertTitle(type, id, { ...extra, ...patch });
+      };
+      const setStatus = (s) => save({ status: saved && saved.status === s ? null : s });
+      const toggleFollow = () => {
+        const f = !(saved && saved.followed);
+        save({ followed: f, ...(f && !(saved && saved.status) ? { status: 'watching' } : {}) });
+        toast(f ? 'Te avisaremos de nuevos episodios y temporadas' : 'Has dejado de seguir esta serie');
+      };
+      const onEpisodesChange = (on) => { if (on && !(saved && saved.status)) save({ status: 'watching' }); };
+
+      const title = (d && (d.title || d.name)) || (saved && saved.title) || '';
+      const backdrop = (d && d.backdrop_path) || (saved && saved.backdrop);
+      const poster = (d && d.poster_path) || (saved && saved.poster);
+      const year = d ? yearOf(d.release_date || d.first_air_date) : saved && saved.year;
+      const meta = d
+        ? [year, type === 'tv' ? plural(d.number_of_seasons || 0, 'temporada', 'temporadas') : fmtRuntime(d.runtime)].filter(Boolean).join(' · ')
+        : year;
+      const genres = d ? (d.genres || []).map((g) => g.name).join(' · ') : '';
+      const tvSt = type === 'tv' && TV_STATUS[(d && d.status) || (saved && saved.tvStatus)];
+      const providers = (d && d['watch/providers'] && d['watch/providers'].results && d['watch/providers'].results.ES && d['watch/providers'].results.ES.flatrate) || [];
+      const recs = ((d && d.recommendations && d.recommendations.results) || []).slice(0, 12).map((r) => ({ ...r, media_type: r.media_type || type }));
+
+      const STATUS_BTNS = [
+        { id: 'pending', label: 'Pendiente', icon: 'Bookmark' },
+        { id: 'watching', label: 'Viendo', icon: 'Eye' },
+        { id: 'watched', label: 'Vista', icon: 'Check' }
+      ];
+
+      return html`<div class="fixed inset-0 z-30 bg-base overflow-y-auto overscroll-contain overlay-enter px-safe">
+        <!-- Cabecera con backdrop -->
+        <div class="relative h-[min(62vw,340px)] bg-card">
+          ${backdrop ? html`<img src=${img(backdrop, 'w780')} alt="" class="w-full h-full object-cover" />`
+            : res.loading ? html`<div class="skeleton w-full h-full"></div>`
+            : html`<div class="w-full h-full bg-gradient-to-br from-zinc-800 to-base"></div>`}
+          <div class="absolute inset-0 bg-gradient-to-t from-base via-base/40 to-black/30"></div>
+          <button class="icon-btn absolute left-3 top-safe bg-black/45 backdrop-blur text-white" aria-label="Volver" onClick=${() => goBack()}>
+            <${Icon} name="ChevronLeft" size=${26} />
+          </button>
+        </div>
+
+        <div class="px-4 -mt-24 relative flex gap-4 items-end">
+          ${poster || title ? html`<${Poster} path=${poster} title=${title} id=${id} class="w-28 aspect-[2/3] rounded-2xl shadow-soft shrink-0 border border-white/10" />`
+            : html`<div class="skeleton w-28 aspect-[2/3] rounded-2xl shrink-0"></div>`}
+          <div class="flex-1 min-w-0 pb-1">
+            ${title ? html`<h1 class="text-[22px] font-extrabold leading-tight">${title}</h1>` : html`<div class="skeleton h-6 rounded w-3/4"></div>`}
+            <div class="text-sm text-zinc-400 mt-1">${meta}</div>
+            ${tvSt && html`<span class=${'inline-block mt-2 px-2 py-0.5 rounded-md text-[11px] font-semibold ' + tvSt.cls}>${tvSt.label}</span>`}
+          </div>
+        </div>
+        ${genres && html`<div class="px-4 mt-3 text-[13px] text-zinc-400">${genres}</div>`}
+
+        <div class="px-4 page-end">
+          <!-- Estado -->
+          <div class="grid grid-cols-3 gap-2 mt-5">
+            ${STATUS_BTNS.map((b) => {
+              const on = saved && saved.status === b.id;
+              return html`<button key=${b.id} onClick=${() => setStatus(b.id)} disabled=${!title}
+                class=${'press h-14 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-[13px] font-semibold transition-colors ' + (on ? 'bg-accent text-black shadow-glow' : 'bg-card text-zinc-300')}>
+                <${Icon} name=${b.icon} size=${19} strokeWidth=${on ? 2.6 : 2} />${b.label}
+              </button>`;
+            })}
+          </div>
+
+          ${type === 'tv' && html`<button onClick=${toggleFollow} disabled=${!title}
+            class=${'press w-full mt-2 h-12 rounded-2xl flex items-center justify-center gap-2 font-semibold transition-colors ' + (saved && saved.followed ? 'bg-accent/15 text-accent border border-accent/40' : 'bg-card text-zinc-200')}>
+            <${Icon} name=${saved && saved.followed ? 'BellRing' : 'Bell'} size=${19} />
+            ${saved && saved.followed ? 'Siguiendo · avisos activados' : 'Seguir serie'}
+          </button>`}
+
+          <!-- Puntuación y notas -->
+          <div class="mt-5 rounded-2xl bg-card p-3">
+            <div class="text-xs uppercase tracking-wide text-zinc-500 font-semibold px-1">Mi puntuación</div>
+            <div class="-ml-1.5"><${Stars} value=${(saved && saved.rating) || 0} onChange=${(v) => save({ rating: v })} /></div>
+            <${NotesField} key=${k} value=${(saved && saved.notes) || ''} onSave=${(notes) => save({ notes })} />
+          </div>
+
+          ${res.loading && !d && html`<div class="mt-6 space-y-2"><div class="skeleton h-3.5 rounded"></div><div class="skeleton h-3.5 rounded w-11/12"></div><div class="skeleton h-3.5 rounded w-4/5"></div></div>`}
+          ${res.error && !d && html`<div class="mt-6 rounded-2xl bg-card p-4 text-sm text-zinc-400 flex gap-2"><${Icon} name="WifiOff" size=${18} class="shrink-0" />No se pudo cargar la información de TMDB. Tus datos guardados siguen aquí.</div>`}
+
+          ${d && d.overview && html`<div class="mt-6">
+            <h2 class="text-[17px] font-bold mb-1.5">Sinopsis</h2>
+            <p class="text-[15px] leading-relaxed text-zinc-300">${d.overview}</p>
+          </div>`}
+
+          ${d && type === 'tv' && html`<${NextEpisodeCard} d=${d} />`}
+
+          ${d && html`<div class="mt-6">
+            <h2 class="text-[17px] font-bold mb-2">Dónde verlo en España</h2>
+            ${providers.length
+              ? html`<div class="flex flex-wrap gap-2">${providers.map((p) => html`<div key=${p.provider_id} class="flex items-center gap-2 h-11 pl-1.5 pr-3 rounded-xl bg-card">
+                  ${p.logo_path ? html`<img src=${img(p.logo_path, 'w92')} alt="" class="w-8 h-8 rounded-lg" loading="lazy" />` : html`<div class="w-8 h-8 rounded-lg bg-card2 flex items-center justify-center"><${Icon} name="Tv" size=${16} class="text-zinc-400" /></div>`}
+                  <span class="text-sm">${p.provider_name}</span></div>`)}</div>
+                <div class="text-[11px] text-zinc-600 mt-2">Disponibilidad por suscripción · datos de JustWatch vía TMDB</div>`
+              : html`<p class="text-sm text-zinc-400">No está incluida en ninguna plataforma de suscripción en España ahora mismo.</p>`}
+          </div>`}
+
+          ${d && type === 'tv' && html`<${SeasonList} tvId=${id} d=${d} onEpisodesChange=${onEpisodesChange} />`}
+
+          ${recs.length > 0 && html`<div class="mt-7">
+            <h2 class="text-[17px] font-bold mb-3">Si te gusta, prueba con…</h2>
+            <div class="flex gap-3 overflow-x-auto no-scrollbar snap-x-row -mx-4 px-4">
+              ${recs.map((r) => html`<div key=${r.id} class="w-[29%] shrink-0"><${PosterCard} item=${r} /></div>`)}
+            </div>
+          </div>`}
+        </div>
+      </div>`;
+    }
+
+    // Notas con guardado automático
+    function NotesField({ value, onSave }) {
+      const [v, setV] = useState(value);
+      const first = useRef(true);
+      useEffect(() => {
+        if (first.current) { first.current = false; return; }
+        const t = setTimeout(() => onSave(v), 600);
+        return () => clearTimeout(t);
+      }, [v]);
+      return html`<textarea rows="3" value=${v} placeholder="Mis notas…" onInput=${(e) => setV(e.target.value)} onBlur=${() => v !== value && onSave(v)}
+        class="w-full mt-2 rounded-xl bg-card2 border border-line focus:border-accent outline-none p-3 text-zinc-200 placeholder:text-zinc-500 resize-none"></textarea>`;
+    }
+
+    function NextEpisodeCard({ d }) {
+      const next = d.next_episode_to_air;
+      const last = d.last_episode_to_air;
+      const ended = d.status === 'Ended' || d.status === 'Canceled';
+      return html`<div class="mt-6 rounded-2xl bg-card p-4">
+        <div class="flex items-center gap-2 text-xs uppercase tracking-wide text-zinc-500 font-semibold"><${Icon} name="CalendarDays" size=${14} />Próximo episodio</div>
+        ${next
+          ? html`<div class="mt-2 flex items-center gap-3">
+              <div class="flex-1 min-w-0">
+                <div class="font-semibold">T${next.season_number} · E${next.episode_number}${next.name ? ` · ${next.name}` : ''}</div>
+                <div class="text-sm text-zinc-400 capitalize">${fmtDate(next.air_date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) || 'Fecha por confirmar'}</div>
+              </div>
+              ${next.air_date && html`<span class="px-2.5 h-7 rounded-full text-xs font-bold flex items-center bg-accent text-black shrink-0">${countdown(next.air_date)}</span>`}
+            </div>`
+          : html`<div class="mt-2 text-sm text-zinc-300">${ended ? `La serie está ${d.status === 'Ended' ? 'finalizada' : 'cancelada'}: no habrá más episodios.` : 'Todavía no hay fecha anunciada para el próximo episodio.'}</div>`}
+        ${last && html`<div class="text-xs text-zinc-500 mt-2">Último emitido: T${last.season_number}·E${last.episode_number}${last.air_date ? ` · ${fmtDate(last.air_date, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}</div>`}
+      </div>`;
+    }
+
+    // Temporadas desplegables con casillas por episodio
+    function SeasonList({ tvId, d, onEpisodesChange }) {
+      const { watchedEpisodes } = useStore();
+      const w = watchedEpisodes[tvId] || {};
+      const seasons = (d.seasons || []).filter((s) => s.season_number > 0);
+      const total = seasons.reduce((a, s) => a + (s.episode_count || 0), 0);
+      const seen = Object.values(w).reduce((a, l) => a + l.length, 0);
+      if (!seasons.length) return null;
+      return html`<div class="mt-7">
+        <div class="flex items-end mb-3">
+          <h2 class="text-[17px] font-bold flex-1">Temporadas</h2>
+          <span class="text-xs text-zinc-400">${seen}/${total} episodios vistos</span>
+        </div>
+        <div class="space-y-2">
+          ${seasons.map((s) => html`<${SeasonItem} key=${s.season_number} tvId=${tvId} season=${s} watched=${w[s.season_number] || []} onEpisodesChange=${onEpisodesChange} />`)}
+        </div>
+      </div>`;
+    }
+
+    function SeasonItem({ tvId, season, watched, onEpisodesChange }) {
+      const [open, setOpen] = useState(false);
+      const [eps, setEps] = useState(null);
+      const n = season.season_number;
+      const count = season.episode_count || 0;
+      useEffect(() => {
+        if (!open || eps) return;
+        tmdb(`/tv/${tvId}/season/${n}`).then((r) => setEps(r.episodes || [])).catch((e) => { reportError(e); setEps([]); });
+      }, [open]);
+
+      const today = todayStr();
+      const aired = (eps || []).filter((e) => !e.air_date || e.air_date <= today).map((e) => e.episode_number);
+      const allAiredSeen = aired.length > 0 && aired.every((e) => watched.includes(e));
+      const toggle = (e) => { const on = !watched.includes(e); setEpisodes(tvId, n, [e], on); onEpisodesChange(on); };
+      const toggleAll = () => {
+        if (allAiredSeen) setEpisodes(tvId, n, aired, false);
+        else { setEpisodes(tvId, n, aired, true); onEpisodesChange(true); toast(`Temporada ${n} marcada como vista`); }
+      };
+      const pct = count ? Math.min(1, watched.length / count) : 0;
+
+      return html`<div class="rounded-2xl bg-card overflow-hidden">
+        <button class="w-full min-h-[56px] px-4 py-2 flex items-center gap-3 text-left" onClick=${() => setOpen(!open)}>
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold">${season.name || `Temporada ${n}`}</div>
+            <div class="flex items-center gap-2 mt-1">
+              <div class="h-1 flex-1 max-w-[140px] rounded-full bg-zinc-800 overflow-hidden"><div class="h-full bg-accent rounded-full" style=${{ width: `${Math.round(pct * 100)}%` }}></div></div>
+              <span class="text-xs text-zinc-400">${watched.length}/${count}</span>
+            </div>
+          </div>
+          ${count > 0 && watched.length >= count && html`<${Icon} name="CircleCheck" size=${20} class="text-accent" />`}
+          <${Icon} name="ChevronDown" size=${20} class=${'text-zinc-500 transition-transform ' + (open ? 'rotate-180' : '')} />
+        </button>
+        ${open && html`<div class="border-t border-line/70 screen-enter">
+          ${!eps ? html`<div class="p-4 space-y-3">${[0, 1, 2].map((i) => html`<div key=${i} class="skeleton h-9 rounded-lg"></div>`)}</div>`
+            : html`<div>
+              ${aired.length > 0 && html`<div class="px-3 pt-3">
+                <button class=${'press w-full h-11 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 ' + (allAiredSeen ? 'bg-card2 text-zinc-300' : 'bg-accent/15 text-accent')} onClick=${toggleAll}>
+                  <${Icon} name="CheckCheck" size=${18} />${allAiredSeen ? 'Desmarcar temporada' : 'Marcar temporada completa'}
+                </button>
+              </div>`}
+              <ul class="py-1">
+                ${eps.map((e) => {
+                  const on = watched.includes(e.episode_number);
+                  const future = e.air_date && e.air_date > today;
+                  return html`<li key=${e.episode_number}>
+                    <button class=${'w-full min-h-[52px] px-3 flex items-center gap-3 text-left active:bg-white/5 ' + (future ? 'opacity-50' : '')} onClick=${() => toggle(e.episode_number)}>
+                      <span class=${'w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors ' + (on ? 'bg-accent border-accent text-black' : 'border-zinc-600')}>
+                        ${on && html`<${Icon} name="Check" size=${16} strokeWidth=${3} />`}
+                      </span>
+                      <div class="flex-1 min-w-0">
+                        <div class=${'text-sm truncate ' + (on ? 'text-zinc-400' : '')}>${e.episode_number}. ${e.name || `Episodio ${e.episode_number}`}</div>
+                        <div class="text-[11px] text-zinc-500">${future ? `Se estrena ${countdown(e.air_date)} · ` : ''}${e.air_date ? fmtDate(e.air_date, { day: 'numeric', month: 'short', year: 'numeric' }) : 'Sin fecha'}${e.runtime ? ` · ${e.runtime} min` : ''}</div>
+                      </div>
+                    </button>
+                  </li>`;
+                })}
+              </ul>
+            </div>`}
+        </div>`}
+      </div>`;
+    }
+
+    // ---------- Avisos ----------
+    function NotificationsScreen() {
+      const { notifications, titles } = useStore();
+      const unread = notifications.some((n) => !n.read);
+      const markAll = () => store.set('notifications', (l) => l.map((n) => ({ ...n, read: true })));
+      const open = (n) => {
+        store.set('notifications', (l) => l.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+        const [type, id] = n.titleId.split('_');
+        openTitle(type, id);
+      };
+      const clear = async () => {
+        if (await confirmDialog({ title: '¿Borrar todos los avisos?', message: 'Se eliminará el historial de avisos.', confirmText: 'Borrar', danger: true }))
+          store.set('notifications', []);
+      };
+      return html`<${OverlayPage} title="Avisos"
+        right=${notifications.length > 0 && html`<button class="icon-btn text-zinc-400" aria-label="Borrar avisos" onClick=${clear}><${Icon} name="Trash2" size=${20} /></button>`}>
+        ${unread && html`<button class="press w-full h-11 mb-3 rounded-xl bg-card text-accent text-sm font-semibold flex items-center justify-center gap-2" onClick=${markAll}>
+          <${Icon} name="CheckCheck" size=${18} />Marcar todas como leídas</button>`}
+        ${notifications.length === 0
+          ? html`<div class="mt-4"><${EmptyState} icon="BellRing" title="No tienes avisos"
+              text="Sigue tus series y te avisaremos aquí de nuevos episodios y temporadas." /></div>`
+          : html`<div class="space-y-2">${notifications.map((n) => {
+              const t = titles[n.titleId];
+              return html`<button key=${n.id} class=${'press w-full flex gap-3 p-3 rounded-2xl text-left ' + (n.read ? 'bg-card/60' : 'bg-card border border-accent/30')} onClick=${() => open(n)}>
+                ${t ? html`<${Poster} path=${t.poster} title=${t.title} id=${t.id} size="w185" class="w-11 h-16 rounded-lg shrink-0" />`
+                  : html`<div class="w-11 h-16 rounded-lg bg-card2 flex items-center justify-center shrink-0"><${Icon} name="Tv" size=${18} class="text-zinc-500" /></div>`}
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide ${n.kind === 'season' ? 'text-accent' : 'text-sky-300'}">
+                    <${Icon} name=${n.kind === 'season' ? 'Sparkles' : 'CalendarDays'} size=${12} />${n.kind === 'season' ? 'Nueva temporada' : 'Nuevo episodio'}
+                  </div>
+                  <div class=${'text-sm mt-0.5 ' + (n.read ? 'text-zinc-400' : 'text-zinc-100')}>${n.message}</div>
+                  <div class="text-[11px] text-zinc-500 mt-1">${timeAgo(new Date(n.date).getTime())}</div>
+                </div>
+                ${!n.read && html`<span class="w-2.5 h-2.5 rounded-full bg-accent mt-1.5 shrink-0"></span>`}
+              </button>`;
+            })}</div>`}
+      <//>`;
+    }
+
+    // ---------- Ajustes ----------
+    function Card({ title, icon, children }) {
+      return html`<section class="mt-4 rounded-3xl bg-card p-4">
+        <div class="flex items-center gap-2 font-semibold mb-3"><${Icon} name=${icon} size=${18} class="text-accent" />${title}</div>
+        ${children}
+      </section>`;
+    }
+
+    function SettingsScreen() {
+      const { settings, titles, checking } = useStore();
+      const [pinMode, setPinMode] = useState(null); // 'set' | 'change' | 'disable'
+      const [editKey, setEditKey] = useState(false);
+      const fileRef = useRef(null);
+      const followedCount = Object.values(titles).filter((t) => t.type === 'tv' && t.followed).length;
+      const keyLabel = settings.apiKey ? (isV4(settings.apiKey) ? 'Token de lectura (v4)' : 'API key (v3)') : 'Sin clave · modo demo';
+
+      // Exporta todo menos la clave y el PIN
+      const exportData = () => {
+        const data = {
+          app: 'MisSeries', version: 1, exportedAt: new Date().toISOString(),
+          titles: store.state.titles, watchedEpisodes: store.state.watchedEpisodes, notifications: store.state.notifications
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `misseries-copia-${todayStr()}.json`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        toast('Copia de seguridad descargada');
+      };
+      const importData = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        let data;
+        try { data = JSON.parse(await file.text()); } catch (err) { toast('El archivo no es un JSON válido'); return; }
+        if (!data || typeof data.titles !== 'object' || Array.isArray(data.titles)) { toast('Este archivo no parece una copia de Mis Series'); return; }
+        const n = Object.keys(data.titles).length;
+        const ok = await confirmDialog({
+          title: '¿Restaurar copia?', confirmText: 'Restaurar',
+          message: `Se reemplazarán tus datos actuales por los de la copia (${plural(n, 'título', 'títulos')}${data.exportedAt ? `, del ${fmtDate(data.exportedAt.slice(0, 10))}` : ''}). Tu clave y tu PIN no cambian.`
+        });
+        if (!ok) return;
+        store.set('titles', data.titles || {});
+        store.set('watchedEpisodes', data.watchedEpisodes && typeof data.watchedEpisodes === 'object' ? data.watchedEpisodes : {});
+        store.set('notifications', Array.isArray(data.notifications) ? data.notifications : []);
+        toast('Datos restaurados');
+      };
+      const removeApiKey = async () => {
+        if (await confirmDialog({ title: '¿Quitar la clave?', message: 'La app pasará a modo demo con datos de ejemplo. Tus listas no se borran.', confirmText: 'Quitar' })) {
+          store.set('settings', (s) => ({ ...s, apiKey: '', demo: true }));
+          memCache.clear();
+        }
+      };
+      const wipeAll = async () => {
+        if (await confirmDialog({ title: '¿Borrar todos los datos?', message: 'Se eliminarán listas, episodios, notas, avisos, PIN y clave de este dispositivo. No se puede deshacer.', confirmText: 'Borrar todo', danger: true })) {
+          PERSISTED.forEach(removeKey);
+          location.hash = '';
+          location.reload();
+        }
+      };
+
+      return html`<${OverlayPage} title="Ajustes">
+        <${Card} title="Conexión con TMDB" icon="KeyRound">
+          <div class="flex items-center gap-3">
+            <div class="flex-1">
+              <div class="text-sm">${keyLabel}</div>
+              ${settings.apiKey && html`<div class="text-xs text-zinc-500 font-mono mt-0.5">••••••${settings.apiKey.slice(-4)}</div>`}
+            </div>
+            <button class="h-10 px-4 rounded-xl bg-card2 text-sm font-semibold" onClick=${() => setEditKey(!editKey)}>${editKey ? 'Cancelar' : settings.apiKey ? 'Cambiar' : 'Añadir'}</button>
+          </div>
+          ${editKey && html`<div class="mt-3"><${ApiKeyForm} onSaved=${() => setEditKey(false)} /></div>`}
+          ${settings.apiKey && !editKey && html`<button class="mt-2 h-10 text-sm text-zinc-500" onClick=${removeApiKey}>Quitar clave y usar modo demo</button>`}
+        <//>
+
+        <${Card} title="Avisos de estrenos" icon="BellRing">
+          <p class="text-sm text-zinc-400">Sigues ${plural(followedCount, 'serie', 'series')}. Al abrir la app comprobamos novedades como máximo cada 6 horas.</p>
+          <p class="text-xs text-zinc-500 mt-1">Última comprobación: ${settings.lastCheck ? timeAgo(settings.lastCheck) : 'nunca'}</p>
+          <button class="press mt-3 w-full h-11 rounded-xl bg-card2 font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+            disabled=${checking} onClick=${() => checkFollowedSeries({ force: true }).then(() => toast('Comprobación terminada'))}>
+            <${Icon} name="RefreshCw" size=${17} class=${checking ? 'animate-spin' : ''} />${checking ? 'Comprobando…' : 'Comprobar ahora'}
+          </button>
+        <//>
+
+        <${Card} title="PIN de acceso" icon="Lock">
+          ${!cryptoOk
+            ? html`<p class="text-sm text-zinc-400">El PIN necesita una conexión segura (https). Abre la app desde GitHub Pages para activarlo.</p>`
+            : settings.pinHash
+              ? html`<p class="text-sm text-zinc-400">Activado. Se pedirá al abrir la app.</p>
+                  <div class="grid grid-cols-2 gap-2 mt-3">
+                    <button class="press h-11 rounded-xl bg-card2 text-sm font-semibold" onClick=${() => setPinMode('change')}>Cambiar PIN</button>
+                    <button class="press h-11 rounded-xl bg-card2 text-sm font-semibold text-rose-300" onClick=${() => setPinMode('disable')}>Desactivar</button>
+                  </div>`
+              : html`<p class="text-sm text-zinc-400">Protege la app con un PIN de 4 dígitos. Se guarda cifrado (SHA-256), nunca en texto plano.</p>
+                  <button class="press mt-3 w-full h-11 rounded-xl bg-accent text-black text-sm font-semibold" onClick=${() => setPinMode('set')}>Activar PIN</button>`}
+        <//>
+
+        <${Card} title="Copia de seguridad" icon="Save">
+          <p class="text-sm text-zinc-400">Descarga un archivo JSON con tus listas, episodios, notas y avisos (sin la clave ni el PIN).</p>
+          <div class="grid grid-cols-2 gap-2 mt-3">
+            <button class="press h-11 rounded-xl bg-card2 text-sm font-semibold flex items-center justify-center gap-2" onClick=${exportData}><${Icon} name="Download" size=${17} />Exportar datos</button>
+            <button class="press h-11 rounded-xl bg-card2 text-sm font-semibold flex items-center justify-center gap-2" onClick=${() => fileRef.current && fileRef.current.click()}><${Icon} name="Upload" size=${17} />Importar datos</button>
+          </div>
+          <input ref=${fileRef} type="file" accept="application/json,.json" class="hidden" onChange=${importData} />
+        <//>
+
+        <${Card} title="Zona peligrosa" icon="TriangleAlert">
+          <button class="press w-full h-11 rounded-xl bg-rose-500/10 text-rose-300 text-sm font-semibold flex items-center justify-center gap-2" onClick=${wipeAll}>
+            <${Icon} name="Trash2" size=${17} />Borrar todos los datos
+          </button>
+        <//>
+
+        <section class="mt-6 px-2 text-center">
+          <div class="inline-flex items-center gap-2 px-3 h-8 rounded-full bg-card text-xs font-bold tracking-wide" style=${{ color: '#01b4e4' }}>TMDB</div>
+          <p class="text-xs text-zinc-500 mt-2">Esta app usa la API de TMDB pero no está respaldada ni certificada por TMDB.</p>
+          <p class="text-xs text-zinc-600 mt-1">Datos de disponibilidad en plataformas: JustWatch. · Mis Series v1</p>
+        </section>
+
+        ${pinMode && html`<${PinModal} mode=${pinMode} onClose=${() => setPinMode(null)} />`}
+      <//>`;
+    }
+
+    function PinModal({ mode, onClose }) {
+      const [step, setStep] = useState(mode === 'set' ? 'new' : 'current');
+      const first = useRef('');
+      const TITLES = { current: 'Introduce tu PIN actual', new: 'Elige un PIN de 4 dígitos', confirm: 'Repite el nuevo PIN' };
+      const onComplete = async (pin) => {
+        if (step === 'current') {
+          if ((await sha256Pin(pin)) !== store.state.settings.pinHash) return false;
+          if (mode === 'disable') { store.set('settings', (s) => ({ ...s, pinHash: '' })); toast('PIN desactivado'); onClose(); return true; }
+          setStep('new'); return true;
+        }
+        if (step === 'new') { first.current = pin; setStep('confirm'); return true; }
+        if (pin !== first.current) { toast('Los PIN no coinciden. Vuelve a intentarlo.'); setStep('new'); return false; }
+        const hash = await sha256Pin(pin);
+        store.set('settings', (s) => ({ ...s, pinHash: hash }));
+        toast(mode === 'change' ? 'PIN cambiado' : 'PIN activado');
+        onClose();
+        return true;
+      };
+      return html`<div class="fixed inset-0 z-50 bg-base flex flex-col items-center justify-center pt-safe pb-safe pop-in">
+        <button class="icon-btn absolute right-3 top-safe text-zinc-400" aria-label="Cerrar" onClick=${onClose}><${Icon} name="X" size=${24} /></button>
+        <${PinPad} key=${step} title=${TITLES[step]} subtitle=${mode === 'disable' ? 'Para desactivar el PIN' : ''} onComplete=${onComplete} />
+      </div>`;
+    }
+
+    /* =====================================================================
+       APP (raíz: bloqueo, bienvenida, pestañas y pantallas superpuestas)
+       ===================================================================== */
+    const TAB_SCREENS = { inicio: HomeScreen, buscar: SearchScreen, lista: ListScreen, descubrir: DiscoverScreen };
+
+    function App() {
+      const st = useStore();
+      const route = useRoute();
+      const [locked, setLocked] = useState(!!st.settings.pinHash);
+      const ready = !locked && !!(st.settings.apiKey || st.settings.demo);
+
+      // Pide el PIN de nuevo si la app vuelve tras más de 1 minuto en segundo plano
+      useEffect(() => {
+        let hiddenAt = 0;
+        const on = () => {
+          if (document.hidden) { hiddenAt = Date.now(); return; }
+          if (hiddenAt && Date.now() - hiddenAt > 60e3 && store.state.settings.pinHash) setLocked(true);
+          else checkFollowedSeries(); // respeta el límite de 6 horas
+        };
+        document.addEventListener('visibilitychange', on);
+        return () => document.removeEventListener('visibilitychange', on);
+      }, []);
+
+      // Comprobación de estrenos al abrir
+      useEffect(() => {
+        if (!ready) return;
+        const t = setTimeout(() => checkFollowedSeries(), 1500);
+        return () => clearTimeout(t);
+      }, [ready]);
+
+      // Pestaña activa (se recuerda mientras hay una pantalla encima)
+      const isTab = !!TAB_SCREENS[route.name];
+      const lastTab = useRef('inicio');
+      if (isTab) lastTab.current = route.name;
+      const active = lastTab.current;
+      const visited = useRef({});
+      visited.current[active] = true;
+
+      // Guardar y restaurar el scroll de cada pestaña
+      const scrolls = useRef({});
+      const onTab = (id) => {
+        if (id === active && isTab) { window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+        scrolls.current[active] = window.scrollY;
+        navigate('/' + id, { replace: true });
+      };
+      useLayoutEffect(() => { window.scrollTo(0, scrolls.current[active] || 0); }, [active]);
+
+      if (locked) return html`<${LockScreen} onUnlock=${() => setLocked(false)} /><${DialogHost} /><${ToastHost} />`;
+      if (!st.settings.apiKey && !st.settings.demo) return html`<${WelcomeScreen} /><${DialogHost} /><${ToastHost} />`;
+
+      let overlay = null;
+      if (route.name === 'serie' || route.name === 'pelicula') {
+        const type = route.name === 'serie' ? 'tv' : 'movie';
+        const id = route.params[0];
+        if (id && /^\d+$/.test(id)) overlay = html`<${DetailScreen} key=${type + id} type=${type} id=${id} />`;
+      } else if (route.name === 'ajustes') overlay = html`<${SettingsScreen} />`;
+      else if (route.name === 'avisos') overlay = html`<${NotificationsScreen} />`;
+
+      return html`
+        <main class="main-pad px-safe">
+          ${TABS.map((t) => {
+            if (!visited.current[t.id]) return null;
+            const Screen = TAB_SCREENS[t.id];
+            // Las pestañas no se desmontan: conservan búsqueda y scroll
+            return html`<div key=${t.id} class="screen-enter" style=${{ display: t.id === active ? 'block' : 'none' }}><${Screen} /></div>`;
+          })}
+        </main>
+        <${BottomNav} active=${active} onTab=${onTab} />
+        ${overlay}
+        <${DialogHost} />
+        <${ToastHost} />`;
+    }
+
+    render(html`<${App} />`, document.getElementById('app'));
+  </script>
+</body>
+</html>

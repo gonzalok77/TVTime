@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Mis Series: claqueta estilizada con botón de reproducción (fondo a sangre para iconos "maskable") -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1d1d26"/>
+      <stop offset="1" stop-color="#0b0b0f"/>
+    </linearGradient>
+    <linearGradient id="amb" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffc247"/>
+      <stop offset="1" stop-color="#f08c00"/>
+    </linearGradient>
+    <clipPath id="tapa">
+      <rect x="0" y="0" width="264" height="54" rx="12"/>
+    </clipPath>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- Tapa de la claqueta, ligeramente abierta -->
+  <g transform="translate(124 156) rotate(-11 0 54)">
+    <g clip-path="url(#tapa)">
+      <rect width="264" height="54" fill="url(#amb)"/>
+      <path d="M22 0h36l-30 54h-36z M92 0h36l-30 54h-36z M162 0h36l-30 54h-36z M232 0h36l-30 54h-36z" fill="#0b0b0f"/>
+    </g>
+  </g>
+
+  <!-- Cuerpo -->
+  <rect x="124" y="228" width="264" height="170" rx="26" fill="url(#amb)"/>
+  <!-- Botón de reproducción -->
+  <path d="M232 274 L232 352 L298 313 Z" fill="#0b0b0f" stroke="#0b0b0f" stroke-width="14" stroke-linejoin="round"/>
+</svg>
